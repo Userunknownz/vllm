@@ -11,6 +11,7 @@ from vllm.sequence import EmbeddingSequenceGroupOutput, PoolerOutput
 class PoolingType(IntEnum):
     """Enumeration for different types of pooling methods."""
     LAST = 0
+    AVERAGE = 1
 
 
 class Pooler(nn.Module):
@@ -43,6 +44,29 @@ class Pooler(nn.Module):
         if self.pooling_type == PoolingType.LAST:
             last_token_flat_indices = torch.cumsum(prompt_lens, dim=0) - 1
             pooled_data = hidden_states[last_token_flat_indices]
+        
+        elif self.pooling_type == PoolingType.AVERAGE:
+            last_token_flat_indices = torch.cumsum(prompt_lens, dim=0) - 1
+            pooled_data = []
+
+            # Iterate through each prompt
+            start_idx = 0
+            for i, end_idx in enumerate(last_token_flat_indices):
+                # Extract embeddings for the current prompt
+                prompt_embeddings = hidden_states[start_idx:end_idx + 1]  # From start_idx to end_idx (inclusive)
+                
+                # Compute the average embedding for the current prompt
+                average_embedding = prompt_embeddings.mean(dim=0)
+                
+                # Append the average embedding to the pooled_data list
+                pooled_data.append(average_embedding)
+                
+                # Update the start_idx for the next prompt
+                start_idx = end_idx + 1
+              
+              # Convert the list of pooled_data back to a tensor
+            pooled_data = torch.stack(pooled_data)
+            
         else:
             raise ValueError(f"Invalid pooling type: {self.pooling_type}")
 

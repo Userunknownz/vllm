@@ -27,6 +27,10 @@ import torch
 from torch import nn
 from transformers import LlamaConfig
 
+from vllm.model_executor.layers.pooler import Pooler, PoolingType
+from vllm.model_executor.pooling_metadata import PoolingMetadata
+from vllm.sequence import PoolerOutput
+
 from vllm.attention import Attention, AttentionMetadata
 from vllm.config import CacheConfig, LoRAConfig
 from vllm.distributed import (get_pp_group, get_tensor_model_parallel_rank,
@@ -380,6 +384,7 @@ class LlamaForCausalLM(nn.Module, SupportsLoRA):
 
         self.config = config
         self.lora_config = lora_config
+        self._pooler = Pooler(pooling_type=PoolingType.AVERAGE, normalize=False)
 
         self.model = LlamaModel(config,
                                 cache_config,
@@ -422,12 +427,21 @@ class LlamaForCausalLM(nn.Module, SupportsLoRA):
         model_output = self.model(input_ids, positions, kv_caches,
                                   attn_metadata, intermediate_tensors)
         return model_output
+    
+    def pooler(
+        self,
+        hidden_states: torch.Tensor,
+        pooling_metadata: PoolingMetadata,
+    ) -> Optional[PoolerOutput]:
+        return self._pooler(hidden_states, pooling_metadata)
 
     def compute_logits(self, hidden_states: torch.Tensor,
                        sampling_metadata: SamplingMetadata) -> torch.Tensor:
         logits = self.logits_processor(self.lm_head, hidden_states,
                                        sampling_metadata)
         return logits
+    
+    
 
     def sample(
         self,
